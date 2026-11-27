@@ -6,6 +6,34 @@
 
 Shared conventions — argument meanings, checkpoint naming, split-machine deployment, `EVAL_ENV_TYPE` — are documented in the [XPolicyLab README](../../README.md). Official results: [RoboDojo LeaderBoard](https://robodojo-benchmark.com/LeaderBoard).
 
+## Evaluating the simulation checkpoints
+
+There is one model per dataset: robodojo_18 and rlbench_4 (open-jar gripper labels fixed) in joint space, robocasa_7 with end-effector actions. The checkpoints are on ModelScope, `QizhouHuang/sla_memory_sim_v1`, one `<config>/29999/` folder per config. Run them with `openpi/src/openpi/policies/sim_policy.py`; the XPolicyLab files in this folder are not needed.
+
+```bash
+cd openpi && uv sync --frozen   # the policy environment; install.sh is only for XPolicyLab
+```
+
+```python
+from openpi.policies.sim_policy import SimPolicy
+
+policy = SimPolicy("v1.0_robodojo", "<download dir>/v1.0_robodojo/29999")
+policy.reset()            # before every episode
+action = policy.act(obs)  # once per control step
+```
+
+`obs` and `action` use the formats of the training datasets. Besides the keys below, `obs` has `"prompt"`, the task instruction as written in the dataset; images are `[H, W, 3]` uint8 RGB.
+
+| Config | `obs` | `action` |
+| --- | --- | --- |
+| `v1.0_robodojo` | `observation.state` (14) as in robodojo_18; `observation.images.cam_high`, `observation.images.cam_left_wrist`, `observation.images.cam_right_wrist` | robodojo_18 `action` (14): absolute joint targets and grippers |
+| `v1.0_rlbench` | `observation.state` (8) as in rlbench_4; `observation.images.front`, `observation.images.wrist` | rlbench_4 `action` (8): absolute joint targets and `gripper_open` |
+| `v1.0_robocasa` | `observation.state` (16) as in robocasa_7; `observation.images.robot0_agentview_left`, `observation.images.robot0_eye_in_hand` | robocasa_7 `action` (12, -1~1) |
+
+- Call `act` at the dataset's frame rate (robodojo 25, rlbench 30, robocasa 20 per second). The history frames, the episode's first frame and one frame per second over the last 8 seconds, are counted in calls.
+- The model predicts 50 actions at a time and by default runs 50 of them before predicting again on robodojo (as the XPolicyLab RoboDojo evaluation does), 10 on rlbench and 16 on robocasa; `SimPolicy(..., replan_steps=n)` changes this.
+- rlbench open-jar: the training labels mark the gripper closed from the grasp on, but RLBench's `gripper_open` stays 1 while the fingers hold the wide lid, so in that task the state differs from training.
+
 ## Installation
 
 ```bash
